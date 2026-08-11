@@ -25,13 +25,19 @@ func Fetch(ctx context.Context, src Source) (dir string, cleanup func(), err err
 		return abs, func() {}, nil
 	}
 
+	// Only Parse and ParseHub can supply one, so this is a source that never
+	// came from either — an error rather than a nil call.
+	if src.fetch == nil {
+		return "", nil, fmt.Errorf("no way to fetch %s", src.Display)
+	}
+
 	tmp, err := os.MkdirTemp("", "skills-")
 	if err != nil {
 		return "", nil, fmt.Errorf("create temp dir: %w", err)
 	}
 	cleanup = func() { os.RemoveAll(tmp) }
 
-	if err := clone(ctx, src, tmp); err != nil {
+	if err := src.fetch(ctx, tmp); err != nil {
 		cleanup()
 		return "", nil, err
 	}
@@ -41,40 +47,42 @@ func Fetch(ctx context.Context, src Source) (dir string, cleanup func(), err err
 		root = filepath.Join(tmp, filepath.FromSlash(src.Subpath))
 		if info, err := os.Stat(root); err != nil || !info.IsDir() {
 			cleanup()
-			return "", nil, fmt.Errorf("subpath %q not found in %s", src.Subpath, src.CloneURL)
+			return "", nil, fmt.Errorf("subpath %q not found in %s", src.Subpath, src.Display)
 		}
 	}
 	return root, cleanup, nil
 }
 
-// clone always takes the default branch. --branch accepts branch and tag names
-// only, so honouring a ref broke every GitHub permalink, which pins a SHA.
-func clone(ctx context.Context, src Source, dest string) error {
-	ctx, cancel := context.WithTimeout(ctx, cloneTimeout)
-	defer cancel()
+// cloneInto always takes the default branch. --branch accepts branch and tag
+// names only, so honouring a ref broke every GitHub permalink, which pins a SHA.
+func cloneInto(url string) fetcher {
+	return func(ctx context.Context, dest string) error {
+		ctx, cancel := context.WithTimeout(ctx, cloneTimeout)
+		defer cancel()
 
-	// -- keeps a source that begins with a dash in the URL position instead of
-	// git's option position, where --upload-pack would run a command.
-	args := []string{"clone", "--depth", "1", "--", src.CloneURL, dest}
+		// -- keeps a source that begins with a dash in the URL position instead
+		// of git's option position, where --upload-pack would run a command.
+		args := []string{"clone", "--depth", "1", "--", url, dest}
 
-	cmd := exec.CommandContext(ctx, "git", args...)
-	// A blocked credential prompt looks identical to a network stall, so never
-	// let git ask.
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
+		cmd := exec.CommandContext(ctx, "git", args...)
+		// A blocked credential prompt looks identical to a network stall, so
+		// never let git ask.
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("clone %s timed out after %s", src.CloneURL, cloneTimeout)
+		if err := cmd.Run(); err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return fmt.Errorf("clone %s timed out after %s", url, cloneTimeout)
+			}
+			detail := strings.TrimSpace(stderr.String())
+			if detail == "" {
+				detail = err.Error()
+			}
+			return fmt.Errorf("clone %s failed: %s", url, detail)
 		}
-		detail := strings.TrimSpace(stderr.String())
-		if detail == "" {
-			detail = err.Error()
-		}
-		return fmt.Errorf("clone %s failed: %s", src.CloneURL, detail)
+		return nil
 	}
-	return nil
 }
 
 func resolveLocal(p string) (string, error) {

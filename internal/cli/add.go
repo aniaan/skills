@@ -17,6 +17,7 @@ func newAddCmd() *cobra.Command {
 		global bool
 		names  []string
 		all    bool
+		hub    bool
 	)
 
 	cmd := &cobra.Command{
@@ -32,6 +33,9 @@ Sources:
   git@github.com:owner/repo.git                any git URL
   ./path  ../path  /abs/path  ~/path           a local directory
 
+With --hub the source is a URL copied from a skill registry's page rather than
+a git repository, and the latest published version is installed.
+
 Run with no source to create the skill directories without installing
 anything.
 
@@ -39,17 +43,18 @@ When a repository holds several skills and none is named, they are all listed
 and nothing is installed.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdd(cmd, args, global, names, all)
+			return runAdd(cmd, args, global, names, all, hub)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&global, "global", "g", false, "install into the home directory instead of this project")
 	cmd.Flags().StringArrayVarP(&names, "skill", "s", nil, "skill to install; repeat for several")
 	cmd.Flags().BoolVar(&all, "all", false, "install every skill found")
+	cmd.Flags().BoolVar(&hub, "hub", false, "read the source as a skill registry URL, not a git repository")
 	return cmd
 }
 
-func runAdd(cmd *cobra.Command, args []string, global bool, names []string, all bool) error {
+func runAdd(cmd *cobra.Command, args []string, global bool, names []string, all, hub bool) error {
 	out := cmd.OutOrStdout()
 
 	scope, err := store.NewScope(global)
@@ -73,12 +78,16 @@ func runAdd(cmd *cobra.Command, args []string, global bool, names []string, all 
 		return nil
 	}
 
-	src, err := source.Parse(args[0])
+	parse := source.Parse
+	if hub {
+		parse = source.ParseHub
+	}
+	src, err := parse(args[0])
 	if err != nil {
 		return err
 	}
 	if src.IgnoredRef != "" {
-		fmt.Fprintf(out, "  note: ignoring ref %q; cloning the default branch\n", src.IgnoredRef)
+		fmt.Fprintf(out, "  note: ignoring %q; taking the latest\n", src.IgnoredRef)
 	}
 
 	dir, cleanup, err := source.Fetch(cmd.Context(), src)
