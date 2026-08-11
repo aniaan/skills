@@ -11,7 +11,7 @@ skills add vercel-labs/agent-skills@web-design-guidelines
 ## Commands
 
 ```
-skills add [source] [-g] [-s NAME]... [--all] [--hub]
+skills add [source] [-g] [-s NAME]... [--all]
 skills list [-g]
 skills remove <name>... [-g] [-y]
 ```
@@ -21,13 +21,17 @@ skill that is not in every directory; re-run `add` to put it back.
 
 ## Sources
 
+A source names its transport as a prefix. `git+` is the default and may be left
+off; `hub+` reads a skill registry — ClawHub or anything serving its API —
+because the URL alone cannot tell you what is on the other end.
+
 ```bash
 skills add owner/repo
 skills add owner/repo@skill-name              # one skill; use -s NAME for local paths
 skills add https://github.com/owner/repo/tree/main/skills/web-design
 skills add git@github.com:owner/repo.git      # or any git URL
 skills add ./my-skills                        # or /abs/path, ~/path
-skills add --hub https://hub.example.com/owner/skill-name   # ClawHub-style registry
+skills add hub+https://hub.example.com/owner/skill-name
 ```
 
 A source holding several skills lists them and installs nothing; pick with

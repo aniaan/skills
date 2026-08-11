@@ -17,7 +17,6 @@ func newAddCmd() *cobra.Command {
 		global bool
 		names  []string
 		all    bool
-		hub    bool
 	)
 
 	cmd := &cobra.Command{
@@ -32,9 +31,11 @@ Sources:
   https://github.com/owner/repo/tree/ref/path  a subdirectory; the ref is ignored
   git@github.com:owner/repo.git                any git URL
   ./path  ../path  /abs/path  ~/path           a local directory
+  hub+https://host/owner/skill-name            a skill registry
 
-With --hub the source is a URL copied from a skill registry's page rather than
-a git repository, and the latest published version is installed.
+A source may name its transport as a prefix. git+ is the default and may be
+left off; hub+ reads a registry page URL instead, installing the latest
+published version.
 
 Run with no source to create the skill directories without installing
 anything.
@@ -43,18 +44,17 @@ When a repository holds several skills and none is named, they are all listed
 and nothing is installed.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdd(cmd, args, global, names, all, hub)
+			return runAdd(cmd, args, global, names, all)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&global, "global", "g", false, "install into the home directory instead of this project")
 	cmd.Flags().StringArrayVarP(&names, "skill", "s", nil, "skill to install; repeat for several")
 	cmd.Flags().BoolVar(&all, "all", false, "install every skill found")
-	cmd.Flags().BoolVar(&hub, "hub", false, "read the source as a skill registry URL, not a git repository")
 	return cmd
 }
 
-func runAdd(cmd *cobra.Command, args []string, global bool, names []string, all, hub bool) error {
+func runAdd(cmd *cobra.Command, args []string, global bool, names []string, all bool) error {
 	out := cmd.OutOrStdout()
 
 	scope, err := store.NewScope(global)
@@ -78,11 +78,7 @@ func runAdd(cmd *cobra.Command, args []string, global bool, names []string, all,
 		return nil
 	}
 
-	parse := source.Parse
-	if hub {
-		parse = source.ParseHub
-	}
-	src, err := parse(args[0])
+	src, err := source.Parse(args[0])
 	if err != nil {
 		return err
 	}
