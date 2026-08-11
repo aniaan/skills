@@ -28,6 +28,8 @@ func TestParseHub(t *testing.T) {
 		// The query does not survive into Display, which errors print.
 		{label: "version query", in: "https://hub.internal/o/s?version=1.2.3", ref: "1.2.3", display: "https://hub.internal/o/s"},
 		{label: "tag query", in: "https://hub.internal/o/s?tag=latest", ref: "latest", display: "https://hub.internal/o/s"},
+		{label: "version suffix", in: "https://hub.internal/o/s@1.2.3", ref: "1.2.3"},
+		{label: "version suffix with nothing before it", in: "https://hub.internal/o/@1.2.3", wantErr: true},
 		{label: "no path", in: "https://hub.internal", wantErr: true},
 		{label: "no host", in: "https:///note-taking", wantErr: true},
 		{label: "credentials", in: "https://someone:hunter2@hub.example.com/o/s", wantErr: true},
@@ -55,7 +57,7 @@ func TestParseHub(t *testing.T) {
 			if display == "" {
 				display = tt.in
 			}
-			// Display echoes the source as typed, prefix and all.
+			// Display carries the prefix, minus whatever redact removes.
 			if want := hubPrefix + display; got.Display != want {
 				t.Errorf("Display = %q, want %q", got.Display, want)
 			}
@@ -86,6 +88,8 @@ func TestParseHubRequestsSlug(t *testing.T) {
 		{"/owner/note-taking/", "note-taking"},
 		{"/note-taking", "note-taking"},
 		{"/o/s?version=1.2.3", "s"},
+		// The version is peeled off rather than sent as part of the slug.
+		{"/o/s@1.2.3", "s"},
 	} {
 		t.Run(tt.path, func(t *testing.T) {
 			got = ""

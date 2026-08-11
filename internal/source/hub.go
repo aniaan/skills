@@ -68,6 +68,18 @@ func parseHub(arg string) (Source, error) {
 	if version == "" {
 		version = u.Query().Get("tag")
 	}
+	// A trailing @version is peeled off rather than sent as part of the slug,
+	// so it is ignored like every other way of naming a version.
+	if name, pinned, ok := strings.Cut(slug, "@"); ok {
+		slug = name
+		if version == "" {
+			version = pinned
+		}
+	}
+	if slug == "" {
+		return Source{}, fmt.Errorf("no skill named in %q\n"+
+			"expected hub+https://host/owner/skill-name", shown)
+	}
 
 	// The API lives at the origin; a registry behind a path prefix is not one
 	// this recognizes.
