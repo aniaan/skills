@@ -32,6 +32,14 @@ type Source struct {
 
 func (s Source) IsLocal() bool { return s.Local != "" }
 
+// A source names its transport as a prefix. git+ is the default and may be
+// left off; anything else must say so, because the URL alone cannot tell you
+// what is on the other end.
+const (
+	gitPrefix = "git+"
+	hubPrefix = "hub+"
+)
+
 var (
 	ownerRepo  = regexp.MustCompile(`^[\w.-]+/[\w.-]+$`)
 	githubTree = regexp.MustCompile(`^https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?$`)
@@ -39,13 +47,22 @@ var (
 )
 
 // Parse accepts owner/repo, owner/repo@skill, GitHub URLs with an optional
-// /tree/<ref>/<subpath>, any git URL, and local paths. Only the subpath is used.
+// /tree/<ref>/<subpath>, any git URL, and local paths, each optionally behind
+// git+; hub+ reads a skill registry instead. Only the subpath is used.
 func Parse(arg string) (Source, error) {
-	src, err := parseGit(arg)
-	if err != nil || src.IsLocal() {
-		return src, err
+	if rest, ok := strings.CutPrefix(arg, hubPrefix); ok {
+		return parseHub(rest)
 	}
-	src.fetch = cloneInto(src.CloneURL)
+
+	src, err := parseGit(strings.TrimPrefix(arg, gitPrefix))
+	if err != nil {
+		return Source{}, err
+	}
+	// The prefix is optional, so messages quote what was actually typed.
+	src.Display = arg
+	if !src.IsLocal() {
+		src.fetch = cloneInto(src.CloneURL)
+	}
 	return src, nil
 }
 

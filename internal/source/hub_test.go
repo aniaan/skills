@@ -28,6 +28,15 @@ func TestParseHub(t *testing.T) {
 		// The query does not survive into Display, which errors print.
 		{label: "version query", in: "https://hub.internal/o/s?version=1.2.3", ref: "1.2.3", display: "https://hub.internal/o/s"},
 		{label: "tag query", in: "https://hub.internal/o/s?tag=latest", ref: "latest", display: "https://hub.internal/o/s"},
+		// The version leaves the URL too, so Display does not carry it.
+		{label: "version suffix", in: "https://hub.internal/o/s@1.2.3", ref: "1.2.3", display: "https://hub.internal/o/s"},
+		{label: "version suffix and query", in: "https://hub.internal/o/s@1.2.3?version=4.5.6", ref: "4.5.6", display: "https://hub.internal/o/s"},
+		{label: "at in the owner segment", in: "https://hub.internal/o@x/s", display: "https://hub.internal/o@x/s"},
+		{label: "version suffix with no name", in: "https://hub.internal/o/@1.2.3", wantErr: true},
+		{label: "version suffix with no version", in: "https://hub.internal/o/s@", wantErr: true},
+		{label: "two version suffixes", in: "https://hub.internal/o/a@b@c", wantErr: true},
+		{label: "bare at", in: "https://hub.internal/o/@", wantErr: true},
+		{label: "encoded at", in: "https://hub.internal/o/s%401.2.3", ref: "1.2.3", display: "https://hub.internal/o/s"},
 		{label: "no path", in: "https://hub.internal", wantErr: true},
 		{label: "no host", in: "https:///note-taking", wantErr: true},
 		{label: "credentials", in: "https://someone:hunter2@hub.example.com/o/s", wantErr: true},
@@ -38,15 +47,15 @@ func TestParseHub(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.label, func(t *testing.T) {
-			got, err := ParseHub(tt.in)
+			got, err := Parse(hubPrefix + tt.in)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("ParseHub(%q) succeeded, want an error", tt.in)
+					t.Fatalf("parsing %q as a registry succeeded, want an error", tt.in)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("ParseHub(%q): %v", tt.in, err)
+				t.Fatalf("parsing %q as a registry: %v", tt.in, err)
 			}
 			if got.IgnoredRef != tt.ref {
 				t.Errorf("IgnoredRef = %q, want %q", got.IgnoredRef, tt.ref)
@@ -55,8 +64,9 @@ func TestParseHub(t *testing.T) {
 			if display == "" {
 				display = tt.in
 			}
-			if got.Display != display {
-				t.Errorf("Display = %q, want %q", got.Display, display)
+			// Display carries the prefix, minus whatever redact removes.
+			if want := hubPrefix + display; got.Display != want {
+				t.Errorf("Display = %q, want %q", got.Display, want)
 			}
 			if got.IsLocal() || got.CloneURL != "" {
 				t.Errorf("parsed as %+v, want neither a local nor a git source", got)
@@ -85,10 +95,12 @@ func TestParseHubRequestsSlug(t *testing.T) {
 		{"/owner/note-taking/", "note-taking"},
 		{"/note-taking", "note-taking"},
 		{"/o/s?version=1.2.3", "s"},
+		// The version is peeled off rather than sent as part of the slug.
+		{"/o/s@1.2.3", "s"},
 	} {
 		t.Run(tt.path, func(t *testing.T) {
 			got = ""
-			src, err := ParseHub(srv.URL + tt.path)
+			src, err := Parse(hubPrefix + srv.URL + tt.path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -110,7 +122,7 @@ func TestFetchHub(t *testing.T) {
 		"_meta.json":      `{"slug":"note-taking"}`,
 	}))
 
-	src, err := ParseHub(srv.URL + "/owner/note-taking")
+	src, err := Parse(hubPrefix + srv.URL + "/owner/note-taking")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +154,7 @@ func TestFetchHubStopsACrowdedArchive(t *testing.T) {
 		files[fmt.Sprintf("f%d.md", i)] = ""
 	}
 
-	src, err := ParseHub(registry(t, zipped(t, files)).URL + "/o/s")
+	src, err := Parse(hubPrefix + registry(t, zipped(t, files)).URL + "/o/s")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +190,7 @@ func TestFetchHubRejectsEscapingMembers(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			srv := registry(t, zipped(t, map[string]string{name: "x"}))
 
-			src, err := ParseHub(srv.URL + "/o/s")
+			src, err := Parse(hubPrefix + srv.URL + "/o/s")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -207,7 +219,7 @@ func TestParseHubNeverQuotesASecret(t *testing.T) {
 		"ftp://someone:hunter2@hub.example.com/o/s",
 	} {
 		t.Run(in, func(t *testing.T) {
-			_, err := ParseHub(in)
+			_, err := Parse(hubPrefix + in)
 			if err == nil {
 				t.Fatal("ParseHub succeeded, want an error")
 			}
@@ -222,7 +234,7 @@ func TestParseHubNeverQuotesASecret(t *testing.T) {
 func TestFetchHubStopsADeepArchive(t *testing.T) {
 	deep := strings.Repeat("a/", memberDepth) + "f.md"
 
-	src, err := ParseHub(registry(t, zipped(t, map[string]string{deep: "x"})).URL + "/o/s")
+	src, err := Parse(hubPrefix + registry(t, zipped(t, map[string]string{deep: "x"})).URL + "/o/s")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +268,7 @@ func TestFetchHubStopsAnExpandingArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	src, err := ParseHub(registry(t, buf.Bytes()).URL + "/o/s")
+	src, err := Parse(hubPrefix + registry(t, buf.Bytes()).URL + "/o/s")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +290,7 @@ func TestFetchHubReportsRegistryError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	src, err := ParseHub(srv.URL + "/o/missing")
+	src, err := Parse(hubPrefix + srv.URL + "/o/missing")
 	if err != nil {
 		t.Fatal(err)
 	}

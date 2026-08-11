@@ -71,6 +71,17 @@ func TestParse(t *testing.T) {
 			sub:   "",
 		},
 		{
+			// git+ is the default transport written out, and changes nothing.
+			label: "explicit git prefix",
+			in:    "git+https://github.com/owner/repo",
+			clone: "https://github.com/owner/repo.git",
+		},
+		{
+			label: "explicit git prefix on shorthand",
+			in:    "git+owner/repo",
+			clone: "https://github.com/owner/repo.git",
+		},
+		{
 			// The @ in git@host must not be read as a skill filter.
 			label: "ssh url",
 			in:    "git@github.com:owner/repo.git",

@@ -39,26 +39,28 @@ var client = &http.Client{
 	},
 }
 
-// ParseHub reads a URL copied from a registry's skill page, which is
-// /{owner}/{slug}. The API is indexed by slug alone, so the owner is display
-// only. A version in the query is reported and ignored, like a git ref.
-func ParseHub(arg string) (Source, error) {
+// parseHub reads what followed hub+: a URL copied from a registry's skill page,
+// which is /{owner}/{slug}. The API is indexed by slug alone, so the owner is
+// display only. A version in the query is reported and ignored, like a git ref.
+func parseHub(arg string) (Source, error) {
+	shown := hubPrefix + redact(arg)
+
 	u, err := url.Parse(arg)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return Source{}, fmt.Errorf("unrecognized registry URL %q\n"+
-			"expected https://host/owner/skill-name", redact(arg))
+			"expected hub+https://host/owner/skill-name", shown)
 	}
 
 	// Refused rather than dropped: the request would go out unauthenticated
 	// while the password stayed in the messages the user sees.
 	if u.User != nil {
-		return Source{}, fmt.Errorf("credentials in a registry URL are not supported: %s", redact(arg))
+		return Source{}, fmt.Errorf("credentials in a registry URL are not supported: %s", shown)
 	}
 
 	segments := strings.FieldsFunc(u.Path, func(r rune) bool { return r == '/' })
 	if len(segments) == 0 {
 		return Source{}, fmt.Errorf("no skill named in %q\n"+
-			"expected https://host/owner/skill-name", redact(arg))
+			"expected hub+https://host/owner/skill-name", shown)
 	}
 	slug := segments[len(segments)-1]
 
@@ -67,13 +69,32 @@ func ParseHub(arg string) (Source, error) {
 		version = u.Query().Get("tag")
 	}
 
+	// A trailing @version is peeled off rather than sent as part of the slug,
+	// so it is ignored like every other way of naming a version. Anything else
+	// shaped like one is rejected instead of guessed at.
+	if name, pinned, ok := strings.Cut(slug, "@"); ok {
+		if name == "" || pinned == "" || strings.Contains(pinned, "@") {
+			return Source{}, fmt.Errorf("cannot read %q as skill-name@version\n"+
+				"expected hub+https://host/owner/skill-name", hubPrefix+redact(arg))
+		}
+		slug = name
+		if version == "" {
+			version = pinned
+		}
+		// Dropped from the URL as well, so it reaches the user through the
+		// ignored-version note and nowhere else.
+		segments[len(segments)-1] = slug
+		u.Path = "/" + strings.Join(segments, "/")
+		shown = hubPrefix + redact(u.String())
+	}
+
 	// The API lives at the origin; a registry behind a path prefix is not one
 	// this recognizes.
 	base := (&url.URL{Scheme: u.Scheme, Host: u.Host}).String()
 
 	return Source{
 		IgnoredRef: version,
-		Display:    redact(arg),
+		Display:    shown,
 		fetch:      downloadInto(base, slug),
 	}, nil
 }
