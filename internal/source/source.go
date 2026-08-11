@@ -2,11 +2,18 @@
 package source
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"regexp"
 	"strings"
 )
+
+// fetcher fills an empty directory with a remote source. It is the only thing
+// the kinds of remote source differ in — subpath, discovery and install are
+// identical once the files are there — so a new kind is a constructor that
+// returns one of these, not another branch in Fetch.
+type fetcher func(ctx context.Context, dest string) error
 
 // Source is a parsed `skills add` argument. Local is set for filesystem
 // sources, CloneURL for everything else; Display is the original text.
@@ -14,11 +21,13 @@ type Source struct {
 	Local    string
 	CloneURL string
 	// Parsed only to reach the subpath behind it, and to report it. Fetch
-	// always takes the default branch.
+	// always takes the default branch, or a registry's latest version.
 	IgnoredRef  string
 	Subpath     string
 	SkillFilter string
 	Display     string
+
+	fetch fetcher
 }
 
 func (s Source) IsLocal() bool { return s.Local != "" }
@@ -32,6 +41,15 @@ var (
 // Parse accepts owner/repo, owner/repo@skill, GitHub URLs with an optional
 // /tree/<ref>/<subpath>, any git URL, and local paths. Only the subpath is used.
 func Parse(arg string) (Source, error) {
+	src, err := parseGit(arg)
+	if err != nil || src.IsLocal() {
+		return src, err
+	}
+	src.fetch = cloneInto(src.CloneURL)
+	return src, nil
+}
+
+func parseGit(arg string) (Source, error) {
 	display := arg
 	if arg == "" {
 		return Source{}, fmt.Errorf("empty source")

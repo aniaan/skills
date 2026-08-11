@@ -18,6 +18,7 @@ func TestFetchIgnoresRef(t *testing.T) {
 		IgnoredRef: "c0f91d41c28b02c8142a3161fbbb089bab35f051",
 		Subpath:    "skills/foo",
 		Display:    repo,
+		fetch:      cloneInto(repo),
 	})
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
@@ -35,9 +36,11 @@ func TestFetchDoesNotLetASourceBecomeAnOption(t *testing.T) {
 	requireGit(t)
 
 	marker := filepath.Join(t.TempDir(), "executed")
+	hostile := "--upload-pack=touch " + marker
 	_, cleanup, err := Fetch(t.Context(), Source{
-		CloneURL: "--upload-pack=touch " + marker,
+		CloneURL: hostile,
 		Display:  "hostile",
+		fetch:    cloneInto(hostile),
 	})
 	if cleanup != nil {
 		cleanup()
@@ -51,6 +54,18 @@ func TestFetchDoesNotLetASourceBecomeAnOption(t *testing.T) {
 	// It failed as a repository name rather than as a rejected flag.
 	if !strings.Contains(err.Error(), "upload-pack") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// Only Parse and ParseHub can supply a fetcher, so a Source assembled any other
+// way must be reported rather than dereferenced.
+func TestFetchWithoutAFetcher(t *testing.T) {
+	_, cleanup, err := Fetch(t.Context(), Source{CloneURL: "https://example.com/x.git", Display: "x"})
+	if cleanup != nil {
+		cleanup()
+	}
+	if err == nil {
+		t.Fatal("Fetch succeeded, want an error")
 	}
 }
 
