@@ -28,8 +28,15 @@ func TestParseHub(t *testing.T) {
 		// The query does not survive into Display, which errors print.
 		{label: "version query", in: "https://hub.internal/o/s?version=1.2.3", ref: "1.2.3", display: "https://hub.internal/o/s"},
 		{label: "tag query", in: "https://hub.internal/o/s?tag=latest", ref: "latest", display: "https://hub.internal/o/s"},
-		{label: "version suffix", in: "https://hub.internal/o/s@1.2.3", ref: "1.2.3"},
-		{label: "version suffix with nothing before it", in: "https://hub.internal/o/@1.2.3", wantErr: true},
+		// The version leaves the URL too, so Display does not carry it.
+		{label: "version suffix", in: "https://hub.internal/o/s@1.2.3", ref: "1.2.3", display: "https://hub.internal/o/s"},
+		{label: "version suffix and query", in: "https://hub.internal/o/s@1.2.3?version=4.5.6", ref: "4.5.6", display: "https://hub.internal/o/s"},
+		{label: "at in the owner segment", in: "https://hub.internal/o@x/s", display: "https://hub.internal/o@x/s"},
+		{label: "version suffix with no name", in: "https://hub.internal/o/@1.2.3", wantErr: true},
+		{label: "version suffix with no version", in: "https://hub.internal/o/s@", wantErr: true},
+		{label: "two version suffixes", in: "https://hub.internal/o/a@b@c", wantErr: true},
+		{label: "bare at", in: "https://hub.internal/o/@", wantErr: true},
+		{label: "encoded at", in: "https://hub.internal/o/s%401.2.3", ref: "1.2.3", display: "https://hub.internal/o/s"},
 		{label: "no path", in: "https://hub.internal", wantErr: true},
 		{label: "no host", in: "https:///note-taking", wantErr: true},
 		{label: "credentials", in: "https://someone:hunter2@hub.example.com/o/s", wantErr: true},

@@ -68,17 +68,24 @@ func parseHub(arg string) (Source, error) {
 	if version == "" {
 		version = u.Query().Get("tag")
 	}
+
 	// A trailing @version is peeled off rather than sent as part of the slug,
-	// so it is ignored like every other way of naming a version.
+	// so it is ignored like every other way of naming a version. Anything else
+	// shaped like one is rejected instead of guessed at.
 	if name, pinned, ok := strings.Cut(slug, "@"); ok {
+		if name == "" || pinned == "" || strings.Contains(pinned, "@") {
+			return Source{}, fmt.Errorf("cannot read %q as skill-name@version\n"+
+				"expected hub+https://host/owner/skill-name", hubPrefix+redact(arg))
+		}
 		slug = name
 		if version == "" {
 			version = pinned
 		}
-	}
-	if slug == "" {
-		return Source{}, fmt.Errorf("no skill named in %q\n"+
-			"expected hub+https://host/owner/skill-name", shown)
+		// Dropped from the URL as well, so it reaches the user through the
+		// ignored-version note and nowhere else.
+		segments[len(segments)-1] = slug
+		u.Path = "/" + strings.Join(segments, "/")
+		shown = hubPrefix + redact(u.String())
 	}
 
 	// The API lives at the origin; a registry behind a path prefix is not one
